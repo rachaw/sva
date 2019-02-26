@@ -24,7 +24,7 @@
 	
 	Message message = Message.creator(new PhoneNumber(msisdn),
 			        new PhoneNumber("+14065455008 "), 
-			        "Please enter " + otp + " to authenticate your self.").create();
+			        "Please enter " + otp + " to authenticate yourself.").create();
 		
 	out.println(message.getSid());
 %>
