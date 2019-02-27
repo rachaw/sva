@@ -1,6 +1,6 @@
 {
     "name": "custom-dialogs",
-    "padlock": "",
+    "description": "",
     "services": [
         {
             "type": "endpoint",
@@ -10,5 +10,7 @@
             "appPassword": "",
             "endpoint": "http://localhost:3978/api/messages"
         }
-    ]
+    ],
+    "padlock": "MHyvI+EBlSNuLDdaiX9tkg==!9OIycY6Lx8uuKnKefql/1s9oeGYXtW9y499MQCOy2244JeJOphQXVb0jE7dUsznv",
+    "version": "2.0"
 }
