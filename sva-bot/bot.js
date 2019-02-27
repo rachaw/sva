@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 const { ActivityTypes } = require('botbuilder');
-const { DialogSet, NumberPrompt, TextPrompt, WaterfallDialog } = require('botbuilder-dialogs');
+const { DialogSet, NumberPrompt, TextPrompt, WaterfallDialog, ChoicePrompt } = require('botbuilder-dialogs');
 
 const { SlotFillingDialog } = require('./slotFillingDialog');
 const { SlotDetails } = require('./slotDetails');
@@ -10,9 +10,14 @@ const { SlotDetails } = require('./slotDetails');
 const DIALOG_STATE_PROPERTY = 'dialogState';
 
 const USER_VERIFIED = 'N';
+const DONE_OPTION = 'done';
 const INCOMPLETE_ORDER_MSG = 'Thank you for validating your verification code. We have found that you have an incomplete order in our system. Would you like to complete it now?. (Y/N)';
 
 PREVIOUS_ORDER_CHANNELS = '';
+
+var CHANNELS_SELECTED = [];
+
+var CHANNEL_OPTIONS = ['Star Sports Value','Sony Ten Value','Discovery', 'Disney-Kids'];
 
 var THANK_YOU_MSG = `Thank you for being a valuable customer. In case you would like to know more information type 'more'`;
 
@@ -23,15 +28,20 @@ const OTHER_MENU_OPTIONS = 'Okay. Please tell me what would you like me to do? 1
 
 const ADD_MORE_PACKS = 'You may choose from these packs 1) Disney-Kids, 2) News 24, 3) NDTV News, 4) National Geographic Channel, 5) Discovery Channel. Type more to see complete list...';
 
-//RAMIT-TODO - Read value from the input and append these in the message below.
-var SEEK_FINAL_CONFIRMATION_WITH_CHG = 'You have added *Star value pack*, *Sony value pack*, *Disney-Kids* and *NDTV News*. Your montly rental would be Rs. 402. Would you like to confirm this order?';
+const SEEK_FINAL_CONFIRMATION_WITH_CHG = 'Your montly rental would be Rs. 402. Would you like to confirm this order?';
+// SEEK_FINAL_CONFIRMATION_WITH_CHG = 'You have added *Star value pack*, *Sony value pack*, *Disney-Kids* and *NDTV News*. Your montly rental would be Rs. 402. Would you like to confirm this order?';
 
 //RAMIT-TODO - Read value from the input and append these in the message below.
-var SEEK_FINAL_CONFIRMATION_NO_CHANGE = 'You have *Star value pack* and *Sony value pack* from your previous. Your monthly rental would be Rs.325 . Would you like to confirm this order?';
+const SEEK_FINAL_CONFIRMATION_NO_CHANGE = 'Your monthly rental would be Rs.325 . Would you like to confirm this order?';
 
 const SHOW_ORDER_SUCCESS_CONFIRMATION_MSG = 'Your order is confirmed. Your new pack will be activated in 4-8 hours.';
 
 const SHOW_ORDER_INCOMPLETE_MSG = 'Your packs have not changes as your order is still in pending state. You will continue watching the current packs with the existing monthly rental';
+
+showChannelOptions = [];
+var channelOptions = [];
+
+// channelOptions = ['A','B','C','D','E','F'];
 
 class SampleBot {
     /**
@@ -47,9 +57,15 @@ class SampleBot {
 
         // Create a dialog set to include the dialogs used by this bot.
         this.dialogs = new DialogSet(this.dialogState);
+        
+        //Ramit - TODO - load this value from the user context stored in CosmosDB
+        var previousOrderChannel = '*Star value pack*, *Sony value pack*';
 
-        //RAMIT - TODO - load this value from the user context stored in CosmosDB
-        SHOW_PREV_ORDER_DETAILS_MSG = 'You already added *Star value pack*, *Sony value pack* to your order. Would you like to add more packs?';
+        SHOW_PREV_ORDER_DETAILS_MSG = 'You already added '+ previousOrderChannel + ' to your order. Would you like to add more packs?';
+
+
+
+
 
         // Set up a series of questions for collecting and verifying user.
         const userCredentialSlots = [
@@ -65,8 +81,12 @@ class SampleBot {
             new SlotDetails('showPrevOrderDetails','showPrevOrderDetails', SHOW_PREV_ORDER_DETAILS_MSG), 
         ];
 
+        var addMorePackSlot = [
+            // new SlotDetails('addPacks','addPacks', ADD_MORE_PACKS, 'Sorry Please choose a pack/channel from the list', ['Redmond', 'Bellevue', 'Seattle']),
+            new SlotDetails('addPacks','addPacks', ADD_MORE_PACKS, 'Sorry Please choose a pack/channel from the list'),            
+        ];    
+
         const changePrevOrderSlot = [
-            new SlotDetails('addMorePacks','addMorePacks', ADD_MORE_PACKS),
             new SlotDetails('confirmChangePrevOrder','confirmChangePrevOrder', SEEK_FINAL_CONFIRMATION_WITH_CHG, 'Please answer in Y/N'),
             new SlotDetails('thankYouMsg','thankYouMsg',THANK_YOU_MSG)
         ];
@@ -108,18 +128,21 @@ class SampleBot {
         
         this.dialogs.add(new SlotFillingDialog('reviewPrevOrder', reviewPrevOrderSlot));
 
+        this.dialogs.add(new SlotFillingDialog('addMorePack', addMorePackSlot));
+
         this.dialogs.add(new SlotFillingDialog('changePrevOrder', changePrevOrderSlot));
         
         this.dialogs.add(new SlotFillingDialog('noChangePrevOrder', noChangePrevOrderSlot));
         
         this.dialogs.add(new TextPrompt('showPrevOrderDetails'), this.incompleteOrderConfirmation);
-        this.dialogs.add(new TextPrompt('addMorePacks'));
+        this.dialogs.add(new ChoicePrompt('addPacks'));
 
         this.dialogs.add(new TextPrompt('confirmChangePrevOrder', this.confirmChangeOrderValidator));
         // this.dialogs.add(new TextPrompt('confirmNoChangePrevOrder', this.confirmNoChangeOrderValidator));
 
         this.dialogs.add(new TextPrompt('text'));
         this.dialogs.add(new TextPrompt('number'));
+        this.dialogs.add(new ChoicePrompt('choices'));
         
         this.dialogs.add(new SlotFillingDialog('otherMenu', otherMenuSlots));
         this.dialogs.add(new TextPrompt('otherHelp'));
@@ -151,6 +174,11 @@ class SampleBot {
             this.processReview.bind(this)
         ]));
 
+        this.dialogs.add(new WaterfallDialog('addMorePackDialog', [
+            this.addMorePackDialog.bind(this),
+            this.loopStep.bind(this)
+        ]));
+
         this.dialogs.add(new WaterfallDialog('confirmPrevOrderDialog', [
             this.confirmPrevOrderDialog.bind(this)
         ]));
@@ -163,6 +191,10 @@ class SampleBot {
 
 
     async changePrevOrderDialog(step) {
+
+        const list = Array.isArray(step.options) ? step.options : [];
+    
+        step.values[SEEK_FINAL_CONFIRMATION_WITH_CHG]  = list.join(', ');
         // return await step.beginDialog('slot-dialog');
         return await step.beginDialog('changePrevOrder');
     }
@@ -177,6 +209,64 @@ class SampleBot {
         return await step.beginDialog('reviewPrevOrder');
     }
 
+    async addMorePackDialog(step) {
+
+
+            // Continue using the same selection list, if any, from the previous iteration of this dialog.
+        const list = Array.isArray(step.options) ? step.options : [];
+
+        step.values[CHANNELS_SELECTED] = list;
+
+        // Create a prompt message.
+        let message;
+        if (list.length === 0) {
+            message = 'Please choose pack/channel to add, or `' + DONE_OPTION + '` to finish.';
+        } else {
+            message = 'You have selected **' + list.join(', ') + '** channels. You can add more channels, ' +
+                'or choose `' + DONE_OPTION + '` to finish.';
+        }
+
+        // Create the list of options to choose from.
+        const options = list.length > 0
+            ? CHANNEL_OPTIONS.filter(function (item) { return item !== list.find(function(element) {
+                return element === item;
+              }) })
+        // ? CHANNEL_OPTIONS.filter(function (item) { return item !== list[0] })
+            : CHANNEL_OPTIONS.slice()
+        options.push(DONE_OPTION);
+
+        // step.showChannelOptions = options;
+
+        return await step.prompt('addPacks', {
+            prompt: message,
+            retryPrompt: 'Please choose an option from the list.',
+            choices: options
+        });
+
+        // return await step.beginDialog('slot-dialog');
+        // return await step.beginDialog('addMorePack');
+    }
+
+    async loopStep(step) {
+        // Retrieve their selection list, the choice they made, and whether they chose to finish.
+        const list = step.values[CHANNELS_SELECTED];
+        const choice = step.result;
+        const done = choice.value === DONE_OPTION;
+    
+        if (!done) {
+            // If they chose a company, add it to the list.
+            list.push(choice.value);
+        }
+    
+        if (done) {
+            // If they're done, exit and return their list.
+            // return await step.endDialog(list);
+            return await step.beginDialog('changePrevOrderDialog',list);
+        } else {
+            // Otherwise, repeat this dialog, passing in the list fralog, passing in the list from this iteration.
+            return await step.replaceDialog('addMorePackDialog', list);
+        }
+    }
 
     async otherMenuDialog(step) {
         // return await step.beginDialog('slot-dialog');
@@ -197,10 +287,7 @@ class SampleBot {
         return await step.beginDialog('checkIfPendingOrder');
     }
 
-
-
-
-        // This is the first step of the WaterfallDialog.
+    // This is the first step of the WaterfallDialog.
     // It kicks off the dialog with the multi-question SlotFillingDialog,
     // then passes the aggregated results on to the next step.
     async startDialog1(step) {
@@ -218,7 +305,7 @@ class SampleBot {
 
         const isChangeRequired = values['checkPendingOrder'];
 
-        await step.context.sendActivity('You have a pending order ' + isChangeRequired);
+        // await step.context.sendActivity('You have a pending order ' + isChangeRequired);
 
         if (isChangeRequired === 'Y') {
             return await step.beginDialog('reviewPrevOrderDialog');
@@ -234,7 +321,6 @@ class SampleBot {
         // return await step.endDialog();
     }
 
-
     async processReview(step) {
         // Each "slot" in the SlotFillingDialog is represented by a field in step.result.values.
         // The complex that contain subfields have their own .values field containing the sub-values.
@@ -242,10 +328,10 @@ class SampleBot {
 
         const isChangeRequired = values['showPrevOrderDetails'];
 
-        await step.context.sendActivity('You have chosen to change previous order ' + isChangeRequired);
+        // await step.context.sendActivity('You have chosen to change previous order ' + isChangeRequired);
 
         if (isChangeRequired === 'Y') {
-            return await step.beginDialog('changePrevOrderDialog');
+            return await step.beginDialog('addMorePackDialog');
         } else {
             return await step.beginDialog('confirmPrevOrderDialog');
         }
@@ -386,80 +472,62 @@ class SampleBot {
         return false;
     }
 
-    async startSelectionStep(stepContext) {
-        // Set the user's age to what they entered in response to the age prompt.
-        stepContext.values[USER_INFO].age = stepContext.result;
+    // async startSelectionStep(step) {
+    //     // Set the user's age to what they entered in response to the age prompt.
+    //     step.values[USER_INFO].age = step.result;
     
-        if (stepContext.result < 25) {
-            // If they are too young, skip the review-selection dialog, and pass an empty list to the next step.
-            await stepContext.context.sendActivity('You must be 25 or older to participate.');
-            return await stepContext.next([]);
-        } else {
-            // Otherwise, start the review-selection dialog.
-            return await stepContext.beginDialog(REVIEW_SELECTION_DIALOG);
-        }
-    }
+    //     if (step.result < 25) {
+    //         // If they are too young, skip the review-selection dialog, and pass an empty list to the next step.
+    //         await step.context.sendActivity('You must be 25 or older to participate.');
+    //         return await step.next([]);
+    //     } else {
+    //         // Otherwise, start the review-selection dialog.
+    //         return await step.beginDialog(REVIEW_SELECTION_DIALOG);
+    //     }
+    // }
     
-    async acknowledgementStep(stepContext) {
-        // Set the user's company selection to what they entered in the review-selection dialog.
-        const list = stepContext.result || [];
-        stepContext.values[USER_INFO].companiesToReview = list;
+    // async acknowledgementStep(step) {
+    //     // Set the user's company selection to what they entered in the review-selection dialog.
+    //     const list = step.result || [];
+    //     step.values[USER_INFO].companiesToReview = list;
     
-        // Thank them for participating.
-        await stepContext.context.sendActivity(`Thanks for participating, ${stepContext.values[USER_INFO].name}.`);
+    //     // Thank them for participating.
+    //     await step.context.sendActivity(`Thanks for participating, ${step.values[USER_INFO].name}.`);
     
-        // Exit the dialog, returning the collected user information.
-        return await stepContext.endDialog(stepContext.values[USER_INFO]);
-    }
+    //     // Exit the dialog, returning the collected user information.
+    //     return await step.endDialog(step.values[USER_INFO]);
+    // }
 
     // Review selection
-    async selectionStep(stepContext) {
-        // Continue using the same selection list, if any, from the previous iteration of this dialog.
-        const list = Array.isArray(stepContext.options) ? stepContext.options : [];
-        stepContext.values[COMPANIES_SELECTED] = list;
+    // async selectionStep(step) {
+    //     // Continue using the same selection list, if any, from the previous iteration of this dialog.
+    //     const list = Array.isArray(step.options) ? step.options : [];
+    //     step.values[CHANNELS_SELECTED] = list;
     
-        // Create a prompt message.
-        let message;
-        if (list.length === 0) {
-            message = 'Please choose a company to review, or `' + DONE_OPTION + '` to finish.';
-        } else {
-            message = `You have selected **${list[0]}**. You can review an addition company, ` +
-                'or choose `' + DONE_OPTION + '` to finish.';
-        }
+    //     // Create a prompt message.
+    //     let message;
+    //     if (list.length === 0) {
+    //         message = 'Please choose a company to review, or `' + DONE_OPTION + '` to finish.';
+    //     } else {
+    //         message = `You have selected **${list[0]}**. You can review an addition company, ` +
+    //             'or choose `' + DONE_OPTION + '` to finish.';
+    //     }
     
-        // Create the list of options to choose from.
-        const options = list.length > 0
-            ? COMPANY_OPTIONS.filter(function (item) { return item !== list[0] })
-            : COMPANY_OPTIONS.slice();
-        options.push(DONE_OPTION);
+    //     // Create the list of options to choose from.
+    //     const options = list.length > 0
+    //         ? CHANNEL_OPTIONS.filter(function (item) { return item !== list[0] })
+    //         : CHANNEL_OPTIONS.slice();
+    //     options.push(DONE_OPTION);
     
-        // Prompt the user for a choice.
-        return await stepContext.prompt(SELECTION_PROMPT, {
-            prompt: message,
-            retryPrompt: 'Please choose an option from the list.',
-            choices: options
-        });
-    }
+    //     // Prompt the user for a choice.
+    //     return await step.prompt(SELECTION_PROMPT, {
+    //         prompt: message,
+    //         retryPrompt: 'Please choose an option from the list.',
+    //         choices: options
+    //     });
+    // }
     
-    async loopStep(stepContext) {
-        // Retrieve their selection list, the choice they made, and whether they chose to finish.
-        const list = stepContext.values[COMPANIES_SELECTED];
-        const choice = stepContext.result;
-        const done = choice.value === DONE_OPTION;
-    
-        if (!done) {
-            // If they chose a company, add it to the list.
-            list.push(choice.value);
-        }
-    
-        if (done || list.length > 1) {
-            // If they're done, exit and return their list.
-            return await stepContext.endDialog(list);
-        } else {
-            // Otherwise, repeat this dialog, passing in the list fralog, passing in the list from this iteration.
-            return await stepContext.replaceDialog(REVIEW_SELECTION_DIALOG, list);
-        }
-    }
+
 
     /**
      *
@@ -504,7 +572,7 @@ class SampleBot {
             // Send a "this is what the bot does" message.
             const description = [
                 'This is a bot that demonstrates an alternate dialog system',
-                'which uses a slot filling technique to collect multiple responses from a user.',
+                'which is a virtual assistant for SHAARP TV Company..',
                 'Say anything to continue.'
             ];
             await turnContext.sendActivity(description.join(' '));
