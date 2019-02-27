@@ -8,6 +8,7 @@ const { SlotFillingDialog } = require('./slotFillingDialog');
 const { SlotDetails } = require('./slotDetails');
 
 const DIALOG_STATE_PROPERTY = 'dialogState';
+const http =require('http');
 
 const USER_VERIFIED = 'N';
 const DONE_OPTION = 'done';
@@ -439,11 +440,37 @@ class SampleBot {
     async msisdnValidator(prompt) {
         if (prompt.recognized.succeeded) {
             const msisdn = prompt.recognized.value;
-
+            //console.log("msisdn" +msisdn);
             var phoneno = /^\d{10}$/;
             if((msisdn.toString().match(phoneno))){
                 //RAMIT - TODO - Invoke API for sending verification code.
-                return true;
+            	/*var options={
+            		//	host: '10.5.203.124',
+            		 //   port: '3128',
+            			path:'http://ibmsmsservice.azurewebsites.net/jsp/sendsms.jsp?msisdn='+msisdn,
+            			method:'GET'
+            		};*/
+            	var options={
+            			host: 'ibmsmsservice.azurewebsites.net',
+            		    port: '80',
+            			path:'/jsp/sendsms.jsp?msisdn='+msisdn,
+            			method:'GET'
+            		};
+            	http.request(options,function(res){
+            		var body='';
+            		//console.log(res);
+            		res.on('data',function(chunk){
+            			body+=chunk;
+            		});
+            		res.on('end',function(){
+            			console.log("Rest response " +body);
+            			
+            		});
+            		
+            		
+            	}).end();
+            	 return true;
+               
             }
             else {
                 return false;
@@ -456,15 +483,18 @@ class SampleBot {
     async vcodeValidator(prompt) {
         if (prompt.recognized.succeeded) {
             const vcode = prompt.recognized.value;
-
+            console.log("---vcode "+vcode);
+            var otp=['10250','67543','85489','20618','15432'];
             var phoneno = /^\d{6}$/;
-            if((vcode.toString().match(phoneno))){
-
+            console.log(otp.indexOf(vcode));
+            if(otp.indexOf(vcode.toString())!=-1){
+            	console.log("User verified");
                 //RAMIT-TODO - Invoke API for validating verification code. If verified, return true. Else prompt error message and return false.
                 this.USER_VERIFIED = 'Y';
                 return true;
             }
             else {
+            	console.log("User not verified");
                 this.USER_VERIFIED = 'N';
                 return false;
             }
